@@ -1,9 +1,7 @@
 from fastapi import FastAPI, Form
 from fastapi.middleware.cors import CORSMiddleware
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import os
+import resend
 
 app = FastAPI(title="API MC Automatiza")
 
@@ -15,39 +13,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Buscando as credenciais de forma segura (Variáveis de Ambiente)
-EMAIL_REMETENTE = os.getenv("EMAIL_REMETENTE", "seu-email@gmail.com") 
-SENHA_APP = os.getenv("SENHA_APP", "sua-senha-de-app")
-EMAIL_DESTINO = os.getenv("EMAIL_DESTINO", "seu-email@gmail.com") # Onde você quer receber
+# Pegando as chaves do Render
+resend.api_key = os.getenv("RESEND_API_KEY")
+EMAIL_DESTINO = os.getenv("EMAIL_DESTINO", "seu-email@gmail.com") # Coloque lá no Render o e-mail que você usou para entrar no Resend
 
 def disparar_email(nome, email_cliente, demanda):
-    assunto = f"🔥 Novo Lead: {nome} - MC Automatiza"
-    corpo = f"""
-    Você tem um novo pedido de diagnóstico!
-
-    👤 Nome: {nome}
-    ✉️ E-mail do Cliente: {email_cliente}
-    
-    📝 Demanda:
-    {demanda}
-    """
-
-    msg = MIMEMultipart()
-    msg['From'] = EMAIL_REMETENTE
-    msg['To'] = EMAIL_DESTINO
-    msg['Subject'] = assunto
-    msg.attach(MIMEText(corpo, 'plain'))
-
     try:
-        # Conecta ao servidor do Gmail e envia
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(EMAIL_REMETENTE, SENHA_APP)
-        server.send_message(msg)
-        server.quit()
-        print("E-mail disparado com sucesso!")
+        # O Resend exige o remetente onboarding@resend.dev para contas em teste
+        params = {
+            "from": "MC Automatiza <onboarding@resend.dev>",
+            "to": [EMAIL_DESTINO],
+            "subject": f"🔥 Novo Lead: {nome}",
+            "html": f"""
+            <h2>Novo pedido de diagnóstico!</h2>
+            <p><strong>Nome:</strong> {nome}</p>
+            <p><strong>E-mail do Cliente:</strong> {email_cliente}</p>
+            <p><strong>Demanda:</strong><br>{demanda}</p>
+            """
+        }
+        resend.Emails.send(params)
+        print("E-mail disparado com sucesso via Resend!")
     except Exception as e:
-        print(f"Erro ao disparar e-mail: {e}")
+        print(f"Erro no Resend: {e}")
 
 @app.post("/webhook/contato")
 async def receber_contato(
@@ -55,7 +42,5 @@ async def receber_contato(
     email: str = Form(...),
     mensagem: str = Form(...)
 ):
-    # Chama a função que envia o e-mail em segundo plano
     disparar_email(nome, email, mensagem)
-
     return {"status": "sucesso", "mensagem": "Recebemos sua solicitação. Em breve entraremos em contato!"}
